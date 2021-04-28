@@ -2,13 +2,21 @@
 
 For all your torrent ratio needs.
 
+First, set some envvars:
+
 ```
 $ export HTTP_USERNAME=tracker_username
 $ export HTTP_PASSWORD=tracker_password
 $ export REMOTE_HOST=my.seedbox
-
-$ python sync 600
 ```
+
+## Default
+
+`python sync` runs a single search and checks for latest torrents
+
+## Full Search
+
+`python sync --full_scan=True` does searches for every letter bigram (`aa`, `ab`, `ac`, ... `zy`, `zz`).
 
 ## Run in Docker
 

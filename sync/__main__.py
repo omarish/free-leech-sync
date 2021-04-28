@@ -1,14 +1,16 @@
-from typing import Generator
-import os
+import itertools
 import logging
+import os
+import string
 import subprocess
-from time import sleep
 from pathlib import Path
+from time import sleep
+from typing import Generator
 
-import feedparser
 import click
+import feedparser
 import requests
-from requests import Session, Request
+from requests import Request, Session
 
 from config import (
     HTTP_AUTH,
@@ -44,29 +46,49 @@ def download_file(url, to_filename: Path):
 
 
 def upload_file(local_path, remote_host, remote_pathname):
-    subprocess.call(["scp", local_path, f"{remote_host}:{remote_pathname}"])
+    subprocess.call(
+        [
+            "scp",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "StrictHostKeyChecking=no",
+            local_path,
+            f"{remote_host}:{remote_pathname}",
+        ]
+    )
     pass
 
 
+def handle_link(link):
+    filename = "-".join(link.rsplit("/")[-2:])
+    if not has_file(filename):
+        local_path = LOCAL_DATA_DIR / filename
+        download_file(link, local_path)
+        upload_file(local_path, REMOTE_HOST, REMOTE_WATCH_PATH / filename)
+        logging.info("Sync ", REMOTE_WATCH_PATH / filename)
+
+
+def full_scan_iterator():
+    searches = itertools.product(string.ascii_lowercase, string.ascii_lowercase)
+    for search in searches:
+        needle = "".join(search)
+        yield feed_request({"title": needle})
+
+
 @click.command()
-@click.argument("sleep_interval", default=-1, type=int)
-def execute(sleep_interval):
-    while 1:
-        s = requests.Session()
-        resp = s.send(feed_request())
-        content = resp.content
-        for link in response_to_links(content):
-            filename = "-".join(link.rsplit("/")[-2:])
-            if not has_file(filename):
-                local_path = LOCAL_DATA_DIR / filename
-                download_file(link, local_path)
-                upload_file(local_path, REMOTE_HOST, REMOTE_WATCH_PATH / filename)
-                logging.info("Sync ", REMOTE_WATCH_PATH / filename)
-        if sleep_interval > -1:
-            logging.info(f"Sleep for {sleep_interval}s")
-            sleep(sleep_interval)
-        else:
-            break
+@click.option("--full_scan", default=False, type=bool)
+def execute(full_scan=False):
+    s = requests.Session()
+    if full_scan:
+        searches = full_scan_iterator()
+    else:
+        searches = [feed_request()]
+
+    for search in searches:
+        resp = s.send(search)
+        for link in response_to_links(resp.content):
+            handle_link(link)
 
 
 if __name__ == "__main__":
